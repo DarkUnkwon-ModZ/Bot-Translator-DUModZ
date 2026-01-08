@@ -91,17 +91,6 @@ def get_language_selection_markup():
     markup.add(types.InlineKeyboardButton("🔙 Back", callback_data="back_home"))
     return markup
 
-def get_history_markup(user_id):
-    history = user_history[user_id]
-    if not history:
-        return None
-    markup = types.InlineKeyboardMarkup()
-    for i, (src, trans) in enumerate(history, 1):
-        markup.add(types.InlineKeyboardButton(f"📌 #{i}: {src[:15]}...", callback_data=f"view_hist_{i}"))
-    markup.add(types.InlineKeyboardButton("🗑️ Clear History", callback_data="clear_history"))
-    markup.add(types.InlineKeyboardButton("🔙 Back", callback_data="back_home"))
-    return markup
-
 # --- START COMMAND ---
 @bot.message_handler(commands=['start'])
 def start(message):
@@ -174,7 +163,6 @@ def handle_queries(call):
         lang_code = call.data.split("_")[-1]
         user_target_lang[user_id] = lang_code
         bot.answer_callback_query(call.id, f"✅ Target language set to {lang_code.upper()}", show_alert=False)
-        # Return to home
         bot.delete_message(call.message.chat.id, call.message.message_id)
         start(call.message)
 
@@ -214,7 +202,6 @@ def perform_translation(message, input_text, source='auto'):
 
     status_msg = bot.reply_to(message, "📡")
     try:
-        # Ultra-motion animation
         frames = [
             "🌌 <b>Connecting to AI Servers...</b>",
             "🔍 <b>Scanning Linguistic Patterns...</b>",
@@ -228,7 +215,6 @@ def perform_translation(message, input_text, source='auto'):
         translated = GoogleTranslator(source=source, target=target).translate(input_text)
         detected = detect(input_text) if source == 'auto' else source
 
-        # Save to history
         user_history[user_id].append((input_text, translated))
 
         final_text = (
@@ -253,7 +239,7 @@ def manual_translation(message):
         return
     
     cmd = message.text.split()[0][1:]
-    lang_map = {'in': 'hi'}  # Fix common alias
+    lang_map = {'in': 'hi'}
     source_lang = lang_map.get(cmd, cmd)
     input_text = message.text.replace(f"/{cmd}", "").strip()
     
@@ -318,12 +304,14 @@ def user_info(message):
         joined = "✅" if is_joined(user_id) else "❌"
         banned = "🚫 BANNED" if user_id in user_banned else "🟢 Active"
         history_count = len(user_history[user_id])
-        bot.reply_to(message, 
-                     f"👤 <b>User Info</b>\n"
-                     f"ID: <code>{user_id}</code>\n"
-                     f"Channel: {joined}\n"
-                     f>Status: {banned}\n"
-                     f"History: {history_count} entries")
+        bot.reply_to(
+            message, 
+            f"👤 <b>User Info</b>\n"
+            f"ID: <code>{user_id}</code>\n"
+            f"Channel: {joined}\n"
+            f"Status: {banned}\n"
+            f"History: {history_count} entries"
+        )
     except:
         bot.reply_to(message, "UsageId: /user_info [user_id]")
 
@@ -334,20 +322,25 @@ def clear_all_hist(message):
 
 @bot.message_handler(commands=['stats'], func=lambda m: m.from_user.id == ADMIN_ID)
 def stats(message):
-    bot.reply_to(message,
-                 f"📊 <b>Bot Statistics</b>\n\n"
-                 f"👥 Total Users: {len(user_list)}\n"
-                 f"🚫 Banned: {len(user_banned)}\n"
-                 f"💬 Avg. History/User: {sum(len(h) for h in user_history.values()) / max(len(user_history), 1):.1f}")
+    total_hist = sum(len(h) for h in user_history.values())
+    avg_hist = total_hist / max(len(user_history), 1)
+    bot.reply_to(
+        message,
+        f"📊 <b>Bot Statistics</b>\n\n"
+        f"👥 Total Users: {len(user_list)}\n"
+        f"🚫 Banned: {len(user_banned)}\n"
+        f"💬 Avg. History/User: {avg_hist:.1f}"
+    )
 
 @bot.message_handler(commands=['broadcast'], func=lambda m: m.from_user.id == ADMIN_ID)
 def broadcast_msg(message):
-    if len(message.text.split()) < 2:
+    parts = message.text.split(None, 1)
+    if len(parts) < 2:
         bot.reply_to(message, "UsageId: /broadcast [message]")
         return
-    msg = message.text.split(None, 1)[1]
+    msg = parts[1]
     success = 0
-    for user in list(user_list):  # Copy to avoid runtime modification
+    for user in list(user_list):
         try:
             bot.send_message(user, f"📣 <b>Broadcast From Admin:</b>\n\n{msg}")
             success += 1
