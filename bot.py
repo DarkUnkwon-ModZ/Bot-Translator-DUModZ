@@ -25,12 +25,12 @@ bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML")
 # --- DATABASE (Simulated) ---
 user_list = set()
 user_banned = set()
-user_target_lang = defaultdict(lambda: 'en')  # Default: English
-user_history = defaultdict(lambda: deque(maxlen=5))  # Last 5 translations
-last_request_time = {}  # For rate limiting
+user_target_lang = defaultdict(lambda: 'en')
+user_history = defaultdict(lambda: deque(maxlen=5))
+last_request_time = {}
 
 # --- RATE LIMITING ---
-REQUEST_COOLDOWN = 5  # seconds
+REQUEST_COOLDOWN = 5
 
 def is_rate_limited(user_id):
     now = time.time()
@@ -40,7 +40,6 @@ def is_rate_limited(user_id):
     last_request_time[user_id] = now
     return False
 
-# --- HELPER FUNCTIONS ---
 def is_joined(user_id):
     try:
         status = bot.get_chat_member(REQ_CHANNEL, user_id).status
@@ -49,7 +48,6 @@ def is_joined(user_id):
         return False
 
 def auto_delete_message(chat_id, message_id, delay=10):
-    """Auto-delete message after delay (for clean UX)"""
     def delete():
         try:
             bot.delete_message(chat_id, message_id)
@@ -67,7 +65,6 @@ def animated_loading(chat_id, message_id, text_frames, final_delay=0.8):
         except:
             break
 
-# --- WELCOME SCREEN DESIGN ---
 def get_start_markup():
     markup = types.InlineKeyboardMarkup(row_width=2)
     btn1 = types.InlineKeyboardButton("𝗗𝗮𝗿𝗸 𝗨𝗻𝗸𝘄𝗼𝗻 𝗠𝗼𝗱𝗭", url=DEV_URL)
@@ -91,28 +88,23 @@ def get_language_selection_markup():
     markup.add(types.InlineKeyboardButton("🔙 Back", callback_data="back_home"))
     return markup
 
-# --- START COMMAND ---
 @bot.message_handler(commands=['start'])
 def start(message):
     user_id = message.from_user.id
     if user_id in user_banned:
         bot.reply_to(message, "🚫 You are banned from using this bot.")
         return
-
     user_list.add(user_id)
-    
     if not is_joined(user_id):
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton("📢 Join Channel", url=f"https://t.me/{REQ_CHANNEL[1:]}"))
         markup.add(types.InlineKeyboardButton("✅ Verify Connection", callback_data="verify"))
-        
-        sent = bot.send_photo(message.chat.id, BANNER_URL, 
+        sent = bot.send_photo(message.chat.id, BANNER_URL,
                        caption=f"⚠️ <b>Access Restricted!</b>\n\nDear {message.from_user.first_name},\nYou must join our official channel to access this premium translator.",
                        reply_markup=markup)
         auto_delete_message(message.chat.id, sent.message_id, delay=60)
         return
-
-    bot.send_photo(message.chat.id, BANNER_URL, 
+    bot.send_photo(message.chat.id, BANNER_URL,
                    caption=f"🚀 <b>Welcome to {BOT_NAME}</b>\n\n"
                            f"I am a professional AI-based high-speed translator.\n\n"
                            f"✨ <b>Features:</b>\n"
@@ -123,14 +115,12 @@ def start(message):
                            f"<i>Send any text to start auto-translating!</i>",
                    reply_markup=get_start_markup())
 
-# --- CALLBACK HANDLERS ---
 @bot.callback_query_handler(func=lambda call: True)
 def handle_queries(call):
     user_id = call.from_user.id
     if user_id in user_banned:
         bot.answer_callback_query(call.id, "🚫 You are banned.", show_alert=True)
         return
-
     if call.data == "verify":
         if is_joined(user_id):
             msg = bot.edit_message_caption("🔄 <b>Verifying...</b>", call.message.chat.id, call.message.message_id)
@@ -141,13 +131,9 @@ def handle_queries(call):
             start(call.message)
         else:
             bot.answer_callback_query(call.id, "❌ Verification Failed! Join the channel first.", show_alert=True)
-
     elif call.data == "settings":
         current_lang = user_target_lang[user_id]
-        lang_names = {
-            'en': 'English', 'bn': 'Bengali', 'hi': 'Hindi',
-            'ar': 'Arabic', 'es': 'Spanish', 'fr': 'French'
-        }
+        lang_names = {'en': 'English', 'bn': 'Bengali', 'hi': 'Hindi', 'ar': 'Arabic', 'es': 'Spanish', 'fr': 'French'}
         current_name = lang_names.get(current_lang, current_lang.upper())
         bot.edit_message_caption(
             f"⚙️ <b>Advanced Settings</b>\n\n"
@@ -158,14 +144,12 @@ def handle_queries(call):
             call.message.chat.id, call.message.message_id,
             reply_markup=get_language_selection_markup()
         )
-
     elif call.data.startswith("set_lang_"):
         lang_code = call.data.split("_")[-1]
         user_target_lang[user_id] = lang_code
         bot.answer_callback_query(call.id, f"✅ Target language set to {lang_code.upper()}", show_alert=False)
         bot.delete_message(call.message.chat.id, call.message.message_id)
         start(call.message)
-
     elif call.data == "help":
         help_txt = (
             "📜 <b>Premium Translator Guide</b>\n\n"
@@ -178,28 +162,23 @@ def handle_queries(call):
             "4️⃣ <b>History:</b> View past translations in Settings.\n\n"
             "<b>💡 Pro Tip:</b> Use /start anytime to reload menu!"
         )
-        bot.edit_message_caption(help_txt, call.message.chat.id, call.message.message_id, 
+        bot.edit_message_caption(help_txt, call.message.chat.id, call.message.message_id,
                                  reply_markup=types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("🔙 Back", callback_data="back_home")))
-
     elif call.data == "back_home":
         bot.delete_message(call.message.chat.id, call.message.message_id)
         start(call.message)
-
     elif call.data == "clear_history":
         user_history[user_id].clear()
         bot.answer_callback_query(call.id, "🗑️ History cleared!", show_alert=True)
         bot.delete_message(call.message.chat.id, call.message.message_id)
         start(call.message)
 
-# --- TRANSLATION CORE ---
 def perform_translation(message, input_text, source='auto'):
     user_id = message.from_user.id
     target = user_target_lang[user_id]
-
     if is_rate_limited(user_id):
         bot.reply_to(message, f"⏳ Please wait {REQUEST_COOLDOWN} seconds between requests.")
         return
-
     status_msg = bot.reply_to(message, "📡")
     try:
         frames = [
@@ -211,12 +190,9 @@ def perform_translation(message, input_text, source='auto'):
             "✅ <b>Translation Complete!</b>"
         ]
         animated_loading(message.chat.id, status_msg.message_id, frames)
-
         translated = GoogleTranslator(source=source, target=target).translate(input_text)
         detected = detect(input_text) if source == 'auto' else source
-
         user_history[user_id].append((input_text, translated))
-
         final_text = (
             f"🌐 <b>AI-Powered Translation</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
@@ -226,7 +202,6 @@ def perform_translation(message, input_text, source='auto'):
         )
         bot.edit_message_text(final_text, message.chat.id, status_msg.message_id)
         auto_delete_message(message.chat.id, status_msg.message_id, delay=30)
-
     except Exception as e:
         error_msg = "❌ Translation failed. Try again or check input."
         if "No support" in str(e):
@@ -237,16 +212,13 @@ def perform_translation(message, input_text, source='auto'):
 def manual_translation(message):
     if not is_joined(message.from_user.id) or message.from_user.id in user_banned:
         return
-    
     cmd = message.text.split()[0][1:]
     lang_map = {'in': 'hi'}
     source_lang = lang_map.get(cmd, cmd)
     input_text = message.text.replace(f"/{cmd}", "").strip()
-    
     if not input_text:
         bot.reply_to(message, "❌ <b>Empty text!</b> Please provide text after command.")
         return
-
     perform_translation(message, input_text, source=source_lang)
 
 @bot.message_handler(content_types=['text'])
@@ -261,24 +233,39 @@ def auto_detect_translation(message):
 def handle_voice(message):
     bot.reply_to(message, "🎙️ <b>Voice Translation</b>\n\nSorry! Voice-to-text is coming soon in v2.0!\n\n👉 Please send text for now.")
 
-# --- ADMIN SYSTEM (Enhanced) ---
-@bot.message_handler(commands=['admin'], func=lambda m: m.from_user.id == ADMIN_ID)
+# --- ADMIN COMMANDS ---
+def is_admin(user_id):
+    return user_id == ADMIN_ID
+
+@bot.message_handler(commands=['admin'], func=lambda m: is_admin(m.from_user.id))
 def admin_panel(message):
-    bot.reply_to(message, 
+    bot.reply_to(message,
                  f"👑 <b>Master Admin Panel</b>\n\n"
                  f"👤 <b>Name:</b> Dark Unknown\n"
                  f"🆔 <b>Chat ID:</b> <code>{ADMIN_ID}</code>\n\n"
                  f"📊 <b>Active Users:</b> {len(user_list)}\n"
                  f"🚫 <b>Banned Users:</b> {len(user_banned)}\n\n"
-                 "<b>Commands:</b>\n"
-                 "/stats - User statistics\n"
-                 "/broadcast [msg] - Send to all\n"
-                 "/ban [user_id] - Ban user\n"
-                 "/unban [user_id] - Unban user\n"
-                 "/user_info [id] - Get user details\n"
-                 "/clear_all_hist - Clear all histories")
+                 "ℹ️ Type /adminhelp to see all admin commands.")
 
-@bot.message_handler(commands=['ban'], func=lambda m: m.from_user.id == ADMIN_ID)
+@bot.message_handler(commands=['adminhelp'], func=lambda m: is_admin(m.from_user.id))
+def admin_help(message):
+    help_text = (
+        "🛠️ <b>Admin Command Reference</b>\n\n"
+        "🔐 <b>Control & Moderation:</b>\n"
+        "• <code>/ban [user_id]</code> – Ban a user permanently\n"
+        "• <code>/unban [user_id]</code> – Unban a user\n"
+        "• <code>/user_info [id]</code> – View user details\n\n"
+        "📊 <b>Monitoring:</b>\n"
+        "• <code>/stats</code> – Show bot statistics\n\n"
+        "📣 <b>Broadcast:</b>\n"
+        "• <code>/broadcast [message]</code> – Send message to all users\n\n"
+        "🧹 <b>Maintenance:</b>\n"
+        "• <code>/clear_all_hist</code> – Clear all translation histories\n\n"
+        "<i>All commands require your Admin ID.</i>"
+    )
+    bot.reply_to(message, help_text)
+
+@bot.message_handler(commands=['ban'], func=lambda m: is_admin(m.from_user.id))
 def ban_user(message):
     try:
         user_id = int(message.text.split()[1])
@@ -288,7 +275,7 @@ def ban_user(message):
     except:
         bot.reply_to(message, "UsageId: /ban [user_id]")
 
-@bot.message_handler(commands=['unban'], func=lambda m: m.from_user.id == ADMIN_ID)
+@bot.message_handler(commands=['unban'], func=lambda m: is_admin(m.from_user.id))
 def unban_user(message):
     try:
         user_id = int(message.text.split()[1])
@@ -297,7 +284,7 @@ def unban_user(message):
     except:
         bot.reply_to(message, "UsageId: /unban [user_id]")
 
-@bot.message_handler(commands=['user_info'], func=lambda m: m.from_user.id == ADMIN_ID)
+@bot.message_handler(commands=['user_info'], func=lambda m: is_admin(m.from_user.id))
 def user_info(message):
     try:
         user_id = int(message.text.split()[1])
@@ -305,7 +292,7 @@ def user_info(message):
         banned = "🚫 BANNED" if user_id in user_banned else "🟢 Active"
         history_count = len(user_history[user_id])
         bot.reply_to(
-            message, 
+            message,
             f"👤 <b>User Info</b>\n"
             f"ID: <code>{user_id}</code>\n"
             f"Channel: {joined}\n"
@@ -315,12 +302,12 @@ def user_info(message):
     except:
         bot.reply_to(message, "UsageId: /user_info [user_id]")
 
-@bot.message_handler(commands=['clear_all_hist'], func=lambda m: m.from_user.id == ADMIN_ID)
+@bot.message_handler(commands=['clear_all_hist'], func=lambda m: is_admin(m.from_user.id))
 def clear_all_hist(message):
     user_history.clear()
     bot.reply_to(message, "🗑️ All translation histories cleared!")
 
-@bot.message_handler(commands=['stats'], func=lambda m: m.from_user.id == ADMIN_ID)
+@bot.message_handler(commands=['stats'], func=lambda m: is_admin(m.from_user.id))
 def stats(message):
     total_hist = sum(len(h) for h in user_history.values())
     avg_hist = total_hist / max(len(user_history), 1)
@@ -332,7 +319,7 @@ def stats(message):
         f"💬 Avg. History/User: {avg_hist:.1f}"
     )
 
-@bot.message_handler(commands=['broadcast'], func=lambda m: m.from_user.id == ADMIN_ID)
+@bot.message_handler(commands=['broadcast'], func=lambda m: is_admin(m.from_user.id))
 def broadcast_msg(message):
     parts = message.text.split(None, 1)
     if len(parts) < 2:
@@ -348,7 +335,6 @@ def broadcast_msg(message):
             pass
     bot.reply_to(message, f"✅ Broadcast sent to {success} users!")
 
-# --- NOTIFICATION & LOGGING ---
 def notify_manager(action_type):
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     log_text = (
