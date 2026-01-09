@@ -9,6 +9,7 @@ from deep_translator import GoogleTranslator
 from langdetect import detect, DetectorFactory
 
 # --- CONFIGURATION ---
+# It is recommended to use os.getenv("BOT_TOKEN") for safety on GitHub
 BOT_TOKEN = "8474301231:AAHzZnyJVzWZjlRKt9l-1KPA-0IBKAoiSX8"
 ADMIN_ID = 8504263842
 REQ_CHANNEL = "@Dark_Unkwon_ModZ"
@@ -28,7 +29,10 @@ def load_db():
         return {"users": {}, "banned": []}
     with open(DB_FILE, 'r') as f:
         try:
-            return json.load(f)
+            data = json.load(f)
+            if "users" not in data: data["users"] = {}
+            if "banned" not in data: data["banned"] = []
+            return data
         except:
             return {"users": {}, "banned": []}
 
@@ -53,11 +57,11 @@ def is_subscribed(user_id):
         member = bot.get_chat_member(REQ_CHANNEL.strip(), user_id)
         return member.status in ['member', 'administrator', 'creator']
     except Exception as e:
-        print(f"Subscription check error: {e}")
         return False
 
 def get_timestamp():
-    return datetime.datetime.now()..strftime("%Y-%m-%d %H:%M:%S")
+    # FIXED: Removed the double dot syntax error
+    return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 # --- KEYBOARDS ---
 def get_main_keyboard():
@@ -83,14 +87,18 @@ def perform_translation(message, text, target_lang, is_cmd=False):
     status_msg = bot.reply_to(message, "⏳ 𝗣𝗿𝗼𝗰𝗲𝘀𝘀𝗶𝗻𝗴 𝘄𝗶𝘁𝗵 𝗔𝗜...")
     
     try:
-        src_lang = detect(text).upper()
+        # FIXED: Added try-except for language detection to prevent crash on symbols/emojis
+        try:
+            src_lang = detect(text).upper()
+        except:
+            src_lang = "AUTO"
+
         translator = GoogleTranslator(source='auto', target=target_lang)
         result = translator.translate(text)
 
-        if not result or result.strip().lower() == text.strip().lower():
-            # Fallback: try again or mark as same
-            pass  # Keep as-is; it might be intentional (e.g., emoji)
-
+        if uid not in db["users"]:
+             db["users"][uid] = {"name": message.from_user.first_name, "lang": "en", "date": get_timestamp(), "count": 0}
+        
         db["users"][uid]["count"] = db["users"][uid].get("count", 0) + 1
         save_db(db)
 
@@ -104,7 +112,6 @@ def perform_translation(message, text, target_lang, is_cmd=False):
         )
         bot.edit_message_text(response, status_msg.chat.id, status_msg.message_id)
     except Exception as e:
-        print(f"Translation error: {e}")
         bot.edit_message_text("❌ <b>AI Error:</b> Unable to translate. Try again.", status_msg.chat.id, status_msg.message_id)
 
 # --- COMMAND HANDLERS ---
@@ -112,7 +119,7 @@ def perform_translation(message, text, target_lang, is_cmd=False):
 @bot.message_handler(commands=['start'])
 def start_command(message):
     uid = str(message.from_user.id)
-    if int(uid) in db["banned"]:
+    if int(uid) in db.get("banned", []):
         return
     
     if uid not in db["users"]:
@@ -151,7 +158,7 @@ def start_command(message):
 @bot.message_handler(commands=['en', 'bn', 'hi', 'ar', 'es', 'fr', 'de', 'ja', 'ru', 'pt'])
 def language_shortcuts(message):
     uid = str(message.from_user.id)
-    if not is_subscribed(message.from_user.id) or int(uid) in db["banned"]:
+    if not is_subscribed(message.from_user.id) or int(uid) in db.get("banned", []):
         return
 
     cmd = message.text.split()[0][1:].lower()
@@ -161,6 +168,8 @@ def language_shortcuts(message):
     args = message.text.replace(f'/{cmd}', '', 1).strip()
 
     if not args:
+        if uid not in db["users"]:
+             db["users"][uid] = {"name": message.from_user.first_name, "lang": "en", "date": get_timestamp(), "count": 0}
         db["users"][uid]["lang"] = cmd
         save_db(db)
         bot.reply_to(message, f"✅ Your default target language has been set to <b>{LANG_MAP[cmd]}</b>")
@@ -177,10 +186,10 @@ def admin_area(message):
 
     if cmd == 'stats':
         total = len(db["users"])
-        banned = len(db["banned"])
+        banned = len(db.get("banned", []))
         stats = f"📊 <b>Bot Statistics</b>\nTotal Users: {total}\nBanned: {banned}\n\n<b>Recent Users:</b>\n"
         for uid, data in list(db["users"].items())[-10:]:
-            stats += f"• {data['name']} (<code>{uid}</code>) -> {data['lang'].upper()}\n"
+            stats += f"• {data.get('name', 'User')} (<code>{uid}</code>) -> {data.get('lang', 'en').upper()}\n"
         bot.reply_to(message, stats)
     
     elif cmd == 'broadcast':
@@ -192,6 +201,7 @@ def admin_area(message):
             try:
                 bot.send_message(u, f"📣 <b>Announcement</b>\n\n{txt}")
                 sent += 1
+                time.sleep(0.1) # Prevent flood
             except:
                 pass
         bot.reply_to(message, f"✅ Broadcast sent to {sent} users.")
@@ -200,11 +210,11 @@ def admin_area(message):
         if len(parts) < 2:
             return bot.reply_to(message, "❌ Usage: /ban <user_id>")
         try:
-            uid = int(parts[1])
-            if uid not in db["banned"]:
-                db["banned"].append(uid)
+            target_uid = int(parts[1])
+            if target_uid not in db["banned"]:
+                db["banned"].append(target_uid)
                 save_db(db)
-                bot.reply_to(message, f"✅ User <code>{uid}</code> banned.")
+                bot.reply_to(message, f"✅ User <code>{target_uid}</code> banned.")
             else:
                 bot.reply_to(message, "⚠️ User already banned.")
         except:
@@ -214,11 +224,11 @@ def admin_area(message):
         if len(parts) < 2:
             return bot.reply_to(message, "❌ Usage: /unban <user_id>")
         try:
-            uid = int(parts[1])
-            if uid in db["banned"]:
-                db["banned"].remove(uid)
+            target_uid = int(parts[1])
+            if target_uid in db["banned"]:
+                db["banned"].remove(target_uid)
                 save_db(db)
-                bot.reply_to(message, f"✅ User <code>{uid}</code> unbanned.")
+                bot.reply_to(message, f"✅ User <code>{target_uid}</code> unbanned.")
             else:
                 bot.reply_to(message, "⚠️ User not banned.")
         except:
@@ -234,13 +244,12 @@ def callback_router(call):
     if call.data == "verify_sub":
         if is_subscribed(call.from_user.id):
             bot.answer_callback_query(call.id, "✅ Verified! You may now use the bot.", show_alert=True)
-            # Re-send start menu
             start_command(call.message)
         else:
             bot.answer_callback_query(call.id, "❌ Still not subscribed!", show_alert=True)
         return
 
-    if int(uid) in db["banned"]:
+    if int(uid) in db.get("banned", []):
         bot.answer_callback_query(call.id, "❌ You are banned.", show_alert=True)
         return
 
@@ -258,10 +267,12 @@ def callback_router(call):
     elif call.data.startswith("lang_"):
         lang_code = call.data.split("_")[1]
         if lang_code in LANG_MAP:
+            if uid not in db["users"]:
+                db["users"][uid] = {"name": call.from_user.first_name, "lang": "en", "date": get_timestamp(), "count": 0}
             db["users"][uid]["lang"] = lang_code
             save_db(db)
             bot.answer_callback_query(call.id, f"✅ Language set to {LANG_MAP[lang_code]}")
-            # Go back to home
+            
             curr_lang = lang_code.upper()
             welcome_text = (
                 f"🚀 <b>{DEV_NAME} Translator v8.0</b>\n"
@@ -340,7 +351,7 @@ def callback_router(call):
 @bot.message_handler(func=lambda m: not m.text.startswith('/'))
 def auto_translate(message):
     uid = str(message.from_user.id)
-    if not is_subscribed(message.from_user.id) or int(uid) in db["banned"]:
+    if not is_subscribed(message.from_user.id) or int(uid) in db.get("banned", []):
         return
     target = db["users"].get(uid, {}).get("lang", "en")
     perform_translation(message, message.text, target)
