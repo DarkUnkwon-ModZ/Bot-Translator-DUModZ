@@ -4,7 +4,6 @@ import datetime
 import threading
 import json
 import os
-import random
 from telebot import types
 from deep_translator import GoogleTranslator
 from langdetect import detect, DetectorFactory
@@ -21,7 +20,7 @@ DEV_URL = "https://t.me/Dark_Unkwon_ModZ"
 DetectorFactory.seed = 0
 bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML")
 
-# --- DATABASE MANAGEMENT (উন্নত করা হয়েছে) ---
+# --- DATABASE MANAGEMENT ---
 DB_FILE = "database.json"
 
 def load_db():
@@ -51,7 +50,14 @@ def is_subscribed(user_id):
 def get_timestamp():
     return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-# --- DYNAMIC UI (আগের সব বাটন অক্ষুণ্ণ) ---
+# ১০টি ভাষার তালিকা
+LANG_MAP = {
+    "en": "English 🇺🇸", "bn": "Bengali 🇧🇩", "hi": "Hindi 🇮🇳", 
+    "ar": "Arabic 🇸🇦", "es": "Spanish 🇪🇸", "fr": "French 🇫🇷",
+    "de": "German 🇩🇪", "ru": "Russian 🇷🇺", "ja": "Japanese 🇯🇵", "ur": "Urdu 🇵🇰"
+}
+
+# --- DYNAMIC UI ---
 def get_main_keyboard(uid):
     markup = types.InlineKeyboardMarkup(row_width=2)
     markup.add(
@@ -63,13 +69,8 @@ def get_main_keyboard(uid):
     return markup
 
 def get_settings_keyboard():
-    langs = [
-        ("English 🇺🇸", "en"), ("Bengali 🇧🇩", "bn"), 
-        ("Hindi 🇮🇳", "hi"), ("Arabic 🇸🇦", "ar"), 
-        ("Spanish 🇪🇸", "es"), ("French 🇫🇷", "fr")
-    ]
     markup = types.InlineKeyboardMarkup(row_width=2)
-    buttons = [types.InlineKeyboardButton(name, callback_data=f"lang_{code}") for name, code in langs]
+    buttons = [types.InlineKeyboardButton(name, callback_data=f"lang_{code}") for code, name in LANG_MAP.items()]
     markup.add(*buttons)
     markup.add(types.InlineKeyboardButton("🔙 Back to Menu", callback_data="back_home"))
     return markup
@@ -81,20 +82,18 @@ def start_command(message):
     uid = str(message.from_user.id)
     first_name = message.from_user.first_name
     
-    # Register User (Default Target Language: English)
     if uid not in db["users"]:
         db["users"][uid] = {
             "name": first_name,
-            "lang": "en", # ডিফল্ট ইংরেজি করা হয়েছে
+            "lang": "en",
             "date": get_timestamp(),
             "count": 0
         }
         save_db(db)
 
     if int(uid) in db["banned"]:
-        return bot.reply_to(message, "🚫 <b>Access Revoked!</b>\nYou are banned from using this service.")
+        return bot.reply_to(message, "🚫 <b>Access Revoked!</b>\nYou are banned.")
 
-    # সাবস্ক্রিপশন চেক
     sub_status = "✅ Verified Member" if is_subscribed(message.from_user.id) else "❌ Not Subscribed"
     
     if not is_subscribed(message.from_user.id):
@@ -102,18 +101,20 @@ def start_command(message):
         markup.add(types.InlineKeyboardButton("📢 Join Channel", url=f"https://t.me/{REQ_CHANNEL[1:]}"))
         markup.add(types.InlineKeyboardButton("🔄 Verify Membership", callback_data="verify_sub"))
         return bot.send_photo(message.chat.id, BANNER_URL, 
-                             caption=f"👋 <b>Welcome {first_name}!</b>\n\n🛡 <b>Status:</b> {sub_status}\n\nYou must join our official channel to unlock the <b>Premium Translator</b> features.", 
+                             caption=f"👋 <b>Welcome {first_name}!</b>\n\n🛡 <b>Status:</b> {sub_status}\n\nYou must join our channel to use the bot.", 
                              reply_markup=markup)
 
-    current_lang = db["users"][uid].get("lang", "en").upper()
+    current_lang_code = db["users"][uid].get("lang", "en")
+    current_lang_name = LANG_MAP.get(current_lang_code, "English")
+    
     welcome_text = (
-        f"🚀 <b>{DEV_NAME} Translator v4.5</b>\n"
+        f"🚀 <b>{DEV_NAME} Translator v5.0</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
         f"👤 <b>User:</b> {first_name}\n"
         f"🛡 <b>Status:</b> {sub_status}\n"
-        f"🎯 <b>Current Target:</b> <code>{current_lang}</code>\n"
+        f"🎯 <b>Target Language:</b> <code>{current_lang_name}</code>\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"Hello! I am your advanced AI assistant. Send me any text in <b>Any Language</b> and I will translate it to <b>{current_lang}</b> instantly."
+        f"আমি একটি উন্নত AI অনুবাদক। যেকোনো ভাষায় টেক্সট পাঠান, আমি তা স্বয়ংক্রিয়ভাবে <b>{current_lang_name}</b> এ রূপান্তর করবো।"
     )
     bot.send_photo(message.chat.id, BANNER_URL, caption=welcome_text, reply_markup=get_main_keyboard(uid))
 
@@ -123,34 +124,34 @@ def callback_router(call):
     
     if call.data == "verify_sub":
         if is_subscribed(call.from_user.id):
-            bot.answer_callback_query(call.id, "✅ Verification Successful!", show_alert=True)
+            bot.answer_callback_query(call.id, "✅ Verified!")
             bot.delete_message(call.message.chat.id, call.message.message_id)
             start_command(call.message)
         else:
-            bot.answer_callback_query(call.id, "❌ You haven't joined yet!", show_alert=True)
+            bot.answer_callback_query(call.id, "❌ Join the channel first!", show_alert=True)
 
     elif call.data == "open_settings":
-        bot.edit_message_caption("⚙️ <b>AI Settings Panel</b>\nSelect your desired output language:", 
+        bot.edit_message_caption("⚙️ <b>AI Settings Panel</b>\nSelect output language:", 
                                  call.message.chat.id, call.message.message_id, reply_markup=get_settings_keyboard())
 
     elif call.data.startswith("lang_"):
         new_lang = call.data.split("_")[1]
         db["users"][uid]["lang"] = new_lang
         save_db(db)
-        bot.answer_callback_query(call.id, f"✅ Language updated to {new_lang.upper()}")
+        bot.answer_callback_query(call.id, f"✅ Language set to {LANG_MAP[new_lang]}")
         bot.delete_message(call.message.chat.id, call.message.message_id)
         start_command(call.message)
 
     elif call.data == "my_profile":
         u_data = db["users"][uid]
         profile_text = (
-            f"👤 <b>Premium User Profile</b>\n"
+            f"👤 <b>User Profile</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"📝 <b>Name:</b> {u_data['name']}\n"
-            f"🆔 <b>User ID:</b> <code>{uid}</code>\n"
-            f"📅 <b>Registered:</b> {u_data['date']}\n"
-            f"🌐 <b>Target Language:</b> {u_data['lang'].upper()}\n"
-            f"📊 <b>Total Translations:</b> {u_data.get('count', 0)}\n"
+            f"🆔 <b>ID:</b> <code>{uid}</code>\n"
+            f"📅 <b>Joined:</b> {u_data['date']}\n"
+            f"🌐 <b>Target:</b> {LANG_MAP.get(u_data['lang'], 'English')}\n"
+            f"📊 <b>Total Used:</b> {u_data.get('count', 0)}\n"
             f"━━━━━━━━━━━━━━━━━━━━"
         )
         markup = types.InlineKeyboardMarkup()
@@ -160,10 +161,13 @@ def callback_router(call):
     elif call.data == "user_guide":
         guide = (
             "📖 <b>AI Translator Guide</b>\n\n"
-            "1. Send any text in <b>Any Language</b> (Bengali, Hindi, French etc).\n"
-            "2. Bot will auto-detect the input language.\n"
-            "3. Result will be in your <b>Target Language</b> (Default: English).\n\n"
-            "⚠️ <i>Note: Use settings to change the output language.</i>"
+            "১. যেকোনো ভাষায় টেক্সট লিখুন, বট অটো ডিটেক্ট করবে।\n"
+            "২. ডিফল্ট ভাষা English, সেটিংস থেকে পরিবর্তন করা যায়।\n"
+            "৩. <b>Direct Commands:</b>\n"
+            "   • <code>/en Hello</code> (English)\n"
+            "   • <code>/bn Hello</code> (Bengali)\n"
+            "   • <code>/hi Hello</code> (Hindi)\n\n"
+            "<b>Available Languages:</b>\n" + ", ".join(LANG_MAP.values())
         )
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton("🔙 Back", callback_data="back_home"))
@@ -173,131 +177,103 @@ def callback_router(call):
         bot.delete_message(call.message.chat.id, call.message.message_id)
         start_command(call.message)
 
-# --- TRANSLATION ENGINE (বাগ ফিক্সড ও শক্তিশালী) ---
+# --- TRANSLATION ENGINE ---
 
 def dynamic_animation(chat_id, msg_id):
-    frames = ["🌀 𝗔𝗜 𝗜𝘀 𝗔𝗻𝗮𝗹𝘆𝘇𝗶𝗻𝗴...", "⚡ 𝗣𝗿𝗼𝗰𝗲𝘀𝘀𝗶𝗻𝗴 𝗗𝗮𝘁𝗮...", "📡 𝗙𝗶𝗻𝗮𝗹𝗶𝘇𝗶𝗻𝗴 𝗧𝗿𝗮𝗻𝘀𝗹𝗮𝘁𝗶𝗼𝗻..."]
+    frames = ["🌀 AI Is Analyzing...", "⚡ Processing Data...", "📡 Finalizing Output..."]
     for frame in frames:
         try:
             bot.edit_message_text(frame, chat_id, msg_id)
-            time.sleep(0.6)
+            time.sleep(0.5)
         except: break
 
-@bot.message_handler(func=lambda m: not m.text.startswith('/'))
-def translate_text(message):
+@bot.message_handler(func=lambda m: True)
+def handle_all_messages(message):
     uid = str(message.from_user.id)
     if not is_subscribed(message.from_user.id) or int(uid) in db["banned"]: return
 
-    target_lang = db["users"].get(uid, {}).get("lang", "en")
     text = message.text
-    
-    # Progress Message
-    status_msg = bot.reply_to(message, "⏳ 𝗖𝗼𝗻𝗻𝗲𝗰𝘁𝗶𝗻𝗴 𝘁𝗼 𝗔𝗜...")
+    target_lang = db["users"].get(uid, {}).get("lang", "en")
+
+    # হ্যান্ডেল প্রিফিক্স কমান্ড (যেমন: /en টেক্সট)
+    if text.startswith('/'):
+        parts = text.split(maxsplit=1)
+        cmd = parts[0][1:].lower()
+        if cmd in LANG_MAP:
+            target_lang = cmd
+            if len(parts) > 1:
+                text = parts[1]
+            else:
+                return # শুধু কমান্ড দিলে কিছু করবে না
+        elif cmd in ['start', 'admin', 'stats', 'broadcast', 'ban', 'unban']:
+            return # এগুলো অ্যাডমিন কমান্ডের জন্য
+
+    # Progress
+    status_msg = bot.reply_to(message, "⏳ Connecting to AI...")
     threading.Thread(target=dynamic_animation, args=(message.chat.id, status_msg.message_id)).start()
     
     try:
-        # নিখুঁত Language Detection
+        # নিখুঁত ডিটেকশন
         try:
             detected_code = detect(text)
-            detected_lang = detected_code.upper()
         except:
             detected_code = "auto"
-            detected_lang = "AUTO"
 
-        # Translation Logic (নিখুঁত করার জন্য একই ভাষা হলে সরাসরি পাঠানো)
+        # যদি ইনপুট এবং টার্গেট একই হয়, অনুবাদ করার দরকার নেই (বাগ ফিক্স)
         if detected_code == target_lang:
             result_text = text
         else:
-            translator = GoogleTranslator(source='auto', target=target_lang)
-            result_text = translator.translate(text)
+            result_text = GoogleTranslator(source='auto', target=target_lang).translate(text)
 
-        # Update Count
         db["users"][uid]["count"] = db["users"][uid].get("count", 0) + 1
         save_db(db)
 
         response = (
             f"✅ <b>AI Translation Result</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"📥 <b>Input ({detected_lang}):</b>\n<code>{text}</code>\n\n"
+            f"📥 <b>Input ({detected_code.upper()}):</b>\n<code>{text}</code>\n\n"
             f"📤 <b>Output ({target_lang.upper()}):</b>\n<code>{result_text}</code>\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"✨ <i>Powered by {DEV_NAME}</i>"
         )
-        time.sleep(1.2)
+        time.sleep(1)
         bot.edit_message_text(response, message.chat.id, status_msg.message_id)
         
     except Exception as e:
-        bot.edit_message_text(f"❌ <b>AI Error:</b> Unable to process. Please try again later.", message.chat.id, status_msg.message_id)
+        bot.edit_message_text(f"❌ <b>AI Error:</b> সাময়িক সমস্যা হচ্ছে। পরে চেষ্টা করুন।", message.chat.id, status_msg.message_id)
 
-# --- ADVANCED ADMIN PANEL (সব কমান্ড কার্যকরী) ---
+# --- ADVANCED ADMIN PANEL ---
 
 @bot.message_handler(commands=['admin', 'stats', 'broadcast', 'ban', 'unban'])
 def admin_handler(message):
-    if message.from_user.id != ADMIN_ID:
-        return bot.reply_to(message, "⚠️ <b>Access Denied!</b>")
+    if message.from_user.id != ADMIN_ID: return
 
     cmd = message.text.split()[0][1:]
 
-    if cmd == 'admin':
-        admin_help = (
-            "👑 <b>Admin Control Panel</b>\n"
-            "━━━━━━━━━━━━━━━━━━━━\n"
-            "📊 /stats - Show detailed user info\n"
-            "📣 /broadcast [msg] - Send global message\n"
-            "🚫 /ban [id] - Ban a user\n"
-            "✅ /unban [id] - Unban a user\n"
-            "━━━━━━━━━━━━━━━━━━━━"
-        )
-        bot.reply_to(message, admin_help)
-
-    elif cmd == 'stats':
-        total_users = len(db["users"])
-        banned_users = len(db["banned"])
-        
-        stat_msg = f"📈 <b>Bot Statistics</b>\n\nTotal Users: {total_users}\nBanned Users: {banned_users}\n\n"
-        stat_msg += "📋 <b>Recent Users Details:</b>\n"
-        
-        # শেষের ১০ জন ইউজারের ডিটেইলস দেখাবে
-        user_list = list(db["users"].items())[-10:]
-        for uid, data in user_list:
-            stat_msg += f"• {data['name']} (<code>{uid}</code>) - {data['lang'].upper()}\n"
-            
-        bot.reply_to(message, stat_msg)
+    if cmd == 'stats':
+        total = len(db["users"])
+        msg = f"📊 <b>Detailed User Statistics</b>\nTotal Users: {total}\n\n"
+        for i, (uid, data) in enumerate(list(db["users"].items())[-20:], 1): # শেষ ২০ জন
+            msg += f"{i}. {data['name']} | ID: <code>{uid}</code> | Lang: {data['lang'].upper()}\n"
+        bot.reply_to(message, msg)
 
     elif cmd == 'broadcast':
         msg_text = message.text.replace('/broadcast', '').strip()
-        if not msg_text: return bot.reply_to(message, "❌ Provide a message.")
-        
-        count = 0
+        if not msg_text: return bot.reply_to(message, "Provide message.")
         for user in db["users"]:
-            try:
-                bot.send_message(user, f"📢 <b>Global Announcement</b>\n\n{msg_text}\n\n<i>By Admin</i>")
-                count += 1
+            try: bot.send_message(user, f"📢 <b>Announcement</b>\n\n{msg_text}")
             except: pass
-        bot.reply_to(message, f"✅ Broadcast sent to {count} users.")
+        bot.reply_to(message, "✅ Sent.")
 
     elif cmd == 'ban':
         try:
-            target = int(message.text.split()[1])
-            if target not in db["banned"]:
-                db["banned"].append(target)
-                save_db(db)
-                bot.reply_to(message, f"🚫 User {target} has been banned.")
-        except: bot.reply_to(message, "❌ Invalid ID.")
+            tid = int(message.text.split()[1])
+            db["banned"].append(tid)
+            save_db(db)
+            bot.reply_to(message, f"🚫 Banned {tid}")
+        except: pass
 
-    elif cmd == 'unban':
-        try:
-            target = int(message.text.split()[1])
-            if target in db["banned"]:
-                db["banned"].remove(target)
-                save_db(db)
-                bot.reply_to(message, f"✅ User {target} has been unbanned.")
-        except: bot.reply_to(message, "❌ Invalid ID.")
-
-# --- INITIALIZATION ---
+# --- RUN ---
 if __name__ == "__main__":
     print(f"--- {DEV_NAME} BOT STARTED ---")
-    try:
-        bot.send_message(LOG_CHANNEL, f"🚀 <b>Bot System Online!</b>\nTime: {get_timestamp()}")
-    except: pass
     bot.infinity_polling()
