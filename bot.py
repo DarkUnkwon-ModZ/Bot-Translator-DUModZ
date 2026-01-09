@@ -82,11 +82,14 @@ def start_command(message):
     uid = str(message.from_user.id)
     first_name = message.from_user.first_name
     
-    # Register User - Default Language set to 'en' (English)
+    # User Verification Status
+    sub_status = "✅ Verified" if is_subscribed(message.from_user.id) else "❌ Not Verified"
+    
+    # Register User (Default Lang: English)
     if uid not in db["users"]:
         db["users"][uid] = {
             "name": first_name,
-            "lang": "en", # Default Target Language English
+            "lang": "en", # Default set to English
             "date": get_timestamp(),
             "count": 0
         }
@@ -100,17 +103,18 @@ def start_command(message):
         markup.add(types.InlineKeyboardButton("📢 Join Channel", url=f"https://t.me/{REQ_CHANNEL[1:]}"))
         markup.add(types.InlineKeyboardButton("🔄 Verify Membership", callback_data="verify_sub"))
         return bot.send_photo(message.chat.id, BANNER_URL, 
-                             caption=f"👋 <b>Welcome {first_name}!</b>\n\nYou must join our official channel to unlock the <b>Premium Translator</b> features.", 
+                             caption=f"👋 <b>Welcome {first_name}!</b>\n\nStatus: <b>{sub_status}</b>\nYou must join our official channel to unlock the <b>Premium Translator</b> features.", 
                              reply_markup=markup)
 
     current_lang = db["users"][uid].get("lang", "en").upper()
     welcome_text = (
         f"🚀 <b>{DEV_NAME} Translator v4.5</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"Hello, <b>{first_name}</b>! I am your advanced AI linguistic assistant. "
-        f"Send me any text, and I will translate it instantly.\n\n"
-        f"🎯 <b>Default Target:</b> <code>{current_lang}</code>\n"
-        f"━━━━━━━━━━━━━━━━━━━━"
+        f"👤 <b>User:</b> {first_name}\n"
+        f"🛡️ <b>Status:</b> {sub_status}\n"
+        f"🎯 <b>Current Target:</b> <code>{current_lang}</code>\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"Send me any text, and I will auto-detect and translate it into <b>{current_lang}</b>."
     )
     bot.send_photo(message.chat.id, BANNER_URL, caption=welcome_text, reply_markup=get_main_keyboard(uid))
 
@@ -134,7 +138,7 @@ def callback_router(call):
         new_lang = call.data.split("_")[1]
         db["users"][uid]["lang"] = new_lang
         save_db(db)
-        bot.answer_callback_query(call.id, f"✅ Language updated to {new_lang.upper()}")
+        bot.answer_callback_query(call.id, f"✅ Target set to {new_lang.upper()}")
         bot.delete_message(call.message.chat.id, call.message.message_id)
         start_command(call.message)
 
@@ -146,7 +150,7 @@ def callback_router(call):
             f"📝 <b>Name:</b> {u_data['name']}\n"
             f"🆔 <b>User ID:</b> <code>{uid}</code>\n"
             f"📅 <b>Registered:</b> {u_data['date']}\n"
-            f"🌐 <b>Target Language:</b> {u_data.get('lang', 'en').upper()}\n"
+            f"🌐 <b>Target Language:</b> {u_data['lang'].upper()}\n"
             f"📊 <b>Total Translations:</b> {u_data.get('count', 0)}\n"
             f"━━━━━━━━━━━━━━━━━━━━"
         )
@@ -157,10 +161,11 @@ def callback_router(call):
     elif call.data == "user_guide":
         guide = (
             "📖 <b>AI Translator Guide</b>\n\n"
-            "1. Send any text in <b>Any Language</b>.\n"
-            "2. Bot will auto-detect the source language.\n"
-            "3. Result will be provided in your <b>Selected Language</b> (Default: English).\n\n"
-            "⚠️ <i>Note: Admin commands are strictly for developers.</i>"
+            "1. Send any text (Bengali, Hindi, etc.).\n"
+            "2. Bot auto-detects the source language.\n"
+            "3. By default, it translates to <b>English</b>.\n"
+            "4. Change target via <b>Settings</b>.\n\n"
+            "⚠️ <i>If input and target languages are same, bot returns original text.</i>"
         )
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton("🔙 Back", callback_data="back_home"))
@@ -186,27 +191,27 @@ def translate_text(message):
     if not is_subscribed(message.from_user.id) or int(uid) in db["banned"]: return
 
     target_lang = db["users"].get(uid, {}).get("lang", "en")
+    text = message.text
     
     # Progress Message
     status_msg = bot.reply_to(message, "⏳ 𝗖𝗼𝗻𝗻𝗲𝗰𝘁𝗶𝗻𝗴 𝘁𝗼 𝗔𝗜...")
-    
-    # Run Animation in thread
     threading.Thread(target=dynamic_animation, args=(message.chat.id, status_msg.message_id)).start()
     
     try:
-        time.sleep(1.8) # Wait for animation
-        text = message.text
-        
-        # Smart Detection
+        # Detect Source Language
         try:
             detected_code = detect(text)
-            detected_lang = detected_code.upper()
+            detected_lang_name = detected_code.upper()
         except:
-            detected_lang = "AUTO"
+            detected_code = "auto"
+            detected_lang_name = "AUTO"
 
-        # High Accuracy Translation
-        translator = GoogleTranslator(source='auto', target=target_lang)
-        result_text = translator.translate(text)
+        # Translation Logic (Safe for same-language input)
+        if detected_code == target_lang:
+            result_text = text # Don't call API if same language
+        else:
+            translator = GoogleTranslator(source='auto', target=target_lang)
+            result_text = translator.translate(text)
 
         # Update Count
         db["users"][uid]["count"] = db["users"][uid].get("count", 0) + 1
@@ -215,24 +220,23 @@ def translate_text(message):
         response = (
             f"✅ <b>AI Translation Result</b>\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"📥 <b>Input ({detected_lang}):</b>\n<code>{text}</code>\n\n"
+            f"📥 <b>Input ({detected_lang_name}):</b>\n<code>{text}</code>\n\n"
             f"📤 <b>Output ({target_lang.upper()}):</b>\n<code>{result_text}</code>\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"✨ <i>Powered by {DEV_NAME}</i>"
         )
+        time.sleep(1.5) # Ensuring animation visibility
         bot.edit_message_text(response, message.chat.id, status_msg.message_id)
         
     except Exception as e:
-        bot.edit_message_text(f"❌ <b>AI Error:</b> Unable to process translation. Please check your text.", message.chat.id, status_msg.message_id)
+        bot.edit_message_text(f"❌ <b>AI Error:</b> Unable to process. Please try again later.", message.chat.id, status_msg.message_id)
 
 # --- ADVANCED ADMIN PANEL ---
 
 @bot.message_handler(commands=['admin', 'stats', 'broadcast', 'ban', 'unban'])
 def admin_handler(message):
     if message.from_user.id != ADMIN_ID:
-        error_markup = types.InlineKeyboardMarkup()
-        error_markup.add(types.InlineKeyboardButton("🆘 Contact Admin", url=DEV_URL))
-        return bot.reply_to(message, "⚠️ <b>Access Denied!</b>\nThis command is reserved for the bot administrator only.", reply_markup=error_markup)
+        return bot.reply_to(message, "⚠️ Access Denied!")
 
     cmd = message.text.split()[0][1:]
 
@@ -240,8 +244,8 @@ def admin_handler(message):
         admin_help = (
             "👑 <b>Admin Control Panel</b>\n"
             "━━━━━━━━━━━━━━━━━━━━\n"
-            "📊 /stats - Detailed user statistics\n"
-            "📣 /broadcast [msg] - Send global message\n"
+            "📊 /stats - Show detailed user data\n"
+            "📣 /broadcast [msg] - Global message\n"
             "🚫 /ban [id] - Ban a user\n"
             "✅ /unban [id] - Unban a user\n"
             "━━━━━━━━━━━━━━━━━━━━"
@@ -249,34 +253,29 @@ def admin_handler(message):
         bot.reply_to(message, admin_help)
 
     elif cmd == 'stats':
-        total_users = len(db["users"])
-        stats_text = f"📈 <b>Bot Detailed Statistics</b>\n"
-        stats_text += f"Total Registered: {total_users}\n"
-        stats_text += f"━━━━━━━━━━━━━━━━━━━━\n"
+        total = len(db["users"])
+        banned = len(db["banned"])
+        details = "📊 <b>Detailed User Statistics:</b>\n\n"
         
-        # Lists name and ID for all users
-        for uid, info in db["users"].items():
-            user_line = f"👤 <b>Name:</b> {info['name']} | 🆔: <code>{uid}</code>\n"
-            # Prevent message length limit (4096 characters)
-            if len(stats_text + user_line) > 4000:
-                bot.reply_to(message, stats_text)
-                stats_text = "━━━━━━━━━━━━━━━━━━━━\n"
-            stats_text += user_line
-            
-        bot.reply_to(message, stats_text)
+        # Limit details to last 15 users to avoid message length limits
+        user_list = list(db["users"].items())[-15:] 
+        for uid, data in user_list:
+            details += f"👤 <b>Name:</b> {data['name']}\n🆔 <b>ID:</b> <code>{uid}</code>\n🌐 <b>Lang:</b> {data['lang'].upper()}\n\n"
+        
+        summary = f"━━━━━━━━━━━━━━━━━━━━\n📈 <b>Total Users:</b> {total}\n🚫 <b>Banned:</b> {banned}"
+        bot.reply_to(message, details + summary)
 
     elif cmd == 'broadcast':
         msg_text = message.text.replace('/broadcast', '').strip()
-        if not msg_text: return bot.reply_to(message, "❌ Provide a message to broadcast.")
+        if not msg_text: return bot.reply_to(message, "❌ Provide a message.")
         
         count = 0
-        for user_id in db["users"]:
+        for user in db["users"]:
             try:
-                bot.send_message(user_id, f"📢 <b>Global Announcement</b>\n\n{msg_text}\n\n<i>By Admin</i>")
+                bot.send_message(user, f"📢 <b>Global Announcement</b>\n\n{msg_text}")
                 count += 1
-                time.sleep(0.1) # Small delay to avoid flood
             except: pass
-        bot.reply_to(message, f"✅ Broadcast sent to {count} users.")
+        bot.reply_to(message, f"✅ Sent to {count} users.")
 
     elif cmd == 'ban':
         try:
@@ -284,17 +283,8 @@ def admin_handler(message):
             if target not in db["banned"]:
                 db["banned"].append(target)
                 save_db(db)
-                bot.reply_to(message, f"🚫 User {target} has been banned.")
-        except: bot.reply_to(message, "❌ Usage: /ban [USER_ID]")
-
-    elif cmd == 'unban':
-        try:
-            target = int(message.text.split()[1])
-            if target in db["banned"]:
-                db["banned"].remove(target)
-                save_db(db)
-                bot.reply_to(message, f"✅ User {target} has been unbanned.")
-        except: bot.reply_to(message, "❌ Usage: /unban [USER_ID]")
+                bot.reply_to(message, f"🚫 User {target} banned.")
+        except: bot.reply_to(message, "❌ Invalid ID.")
 
 # --- INITIALIZATION ---
 if __name__ == "__main__":
