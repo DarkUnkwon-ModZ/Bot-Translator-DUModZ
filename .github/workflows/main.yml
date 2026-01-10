@@ -4,8 +4,8 @@ on:
   push:
     branches: [ main ]
   schedule:
-    - cron: '0 */4 * * *' 
-  workflow_dispatch: 
+    - cron: '0 */4 * * *' # ৪ ঘণ্টা পর পর রিস্টার্ট হবে
+  workflow_dispatch: # ম্যানুয়ালি রান করার অপশন
 
 concurrency:
   group: translator-bot
@@ -31,7 +31,8 @@ jobs:
 
       - name: Run Premium Bot
         env:
-          # Make sure you added BOT_TOKEN in your GitHub Repo Settings -> Secrets
+          # Settings -> Secrets and Variables -> Actions-এ BOT_TOKEN অ্যাড করো
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }} 
         run: |
-          timeout 235m python bot.py || echo "Bot process stopped for scheduled restart."
+          # ৩ ঘণ্টা ৫৫ মিনিট পর প্রসেস বন্ধ হবে যাতে নতুন ক্রন জব শুরু হতে পারে
+          timeout 235m python bot.py || echo "Bot process scheduled for restart."
